@@ -36,16 +36,56 @@
 plugins:
     chef:
         executor: host_agent
-        source: https://github.com/cloudify-cosmo/cloudify-chef-plugin/archive/1.3m4.zip
+        source: https://github.com/buhanec/cloudify-chef-plugin/archive/master.zip
 
 node_types:
     cloudify.chef.nodes.SoftwareComponent:
         derived_from: cloudify.nodes.SoftwareComponent
         properties:
             # All Chef related configuration goes inside
-            # the "chef_config" property.
-            chef_config: {}
+            # the "chef_config" property or as top level
+            # properties. Priority is given to properties
+            # set at runtime, followed by explicit ones
+            # and finally "chef_config" properties are
+            # the final fallback.
 
+            # Chef Client (required)
+            chef_server_url:
+                default: ''
+            environment:
+                default: ''
+            node_name_prefix:
+                default: ''
+            node_name_suffix:
+                default: ''
+            validation_client_name:
+                default: ''
+            validation_key:
+                default: ''
+            version:
+                default: ''
+            # Chef Solo (required)
+            cookbooks:
+                default: ''
+            # Chef Solo (optional)
+            environments:
+                default: ''
+            data_bags:
+                default: ''
+            roles:
+                default: ''
+            # Common (required)
+            version:
+                default: ''
+            # Common (optional)
+            runlist:
+                default: ''
+            runlists:
+                default: {}
+            attributes:
+                default: {}
+            chef_config:
+                default: {}
                 # Alternative 1: Chef Solo
                 #
                 # - cookbooks (required)
@@ -213,7 +253,38 @@ node_types:
                     implementation: chef.chef_plugin.operations.operation
                     inputs: {}
         properties:
-            chef_config: {}
+            chef_server_url:
+                default: ''
+            environment:
+                default: ''
+            node_name_prefix:
+                default: ''
+            node_name_suffix:
+                default: ''
+            validation_client_name:
+                default: ''
+            validation_key:
+                default: ''
+            version:
+                default: ''
+            cookbooks:
+                default: ''
+            environments:
+                default: ''
+            data_bags:
+                default: ''
+            roles:
+                default: ''
+            version:
+                default: ''
+            runlist:
+                default: ''
+            runlists:
+                default: {}
+            attributes:
+                default: {}
+            chef_config:
+                default: {}
 
     # An app server configured with chef
     cloudify.chef.nodes.ApplicationServer:
@@ -236,7 +307,38 @@ node_types:
                     implementation: chef.chef_plugin.operations.operation
                     inputs: {}
         properties:
-            chef_config: {}
+            chef_server_url:
+                default: ''
+            environment:
+                default: ''
+            node_name_prefix:
+                default: ''
+            node_name_suffix:
+                default: ''
+            validation_client_name:
+                default: ''
+            validation_key:
+                default: ''
+            version:
+                default: ''
+            cookbooks:
+                default: ''
+            environments:
+                default: ''
+            data_bags:
+                default: ''
+            roles:
+                default: ''
+            version:
+                default: ''
+            runlist:
+                default: ''
+            runlists:
+                default: {}
+            attributes:
+                default: {}
+            chef_config:
+                default: {}
 
     # A db server configured with chef
     cloudify.chef.nodes.DBMS:
@@ -259,7 +361,38 @@ node_types:
                     implementation: chef.chef_plugin.operations.operation
                     inputs: {}
         properties:
-            chef_config: {}
+            chef_server_url:
+                default: ''
+            environment:
+                default: ''
+            node_name_prefix:
+                default: ''
+            node_name_suffix:
+                default: ''
+            validation_client_name:
+                default: ''
+            validation_key:
+                default: ''
+            version:
+                default: ''
+            cookbooks:
+                default: ''
+            environments:
+                default: ''
+            data_bags:
+                default: ''
+            roles:
+                default: ''
+            version:
+                default: ''
+            runlist:
+                default: ''
+            runlists:
+                default: {}
+            attributes:
+                default: {}
+            chef_config:
+                default: {}
 
     # An app module configured with chef
     cloudify.chef.nodes.ApplicationModule:
@@ -282,7 +415,38 @@ node_types:
                     implementation: chef.chef_plugin.operations.operation
                     inputs: {}
         properties:
-            chef_config: {}
+            chef_server_url:
+                default: ''
+            environment:
+                default: ''
+            node_name_prefix:
+                default: ''
+            node_name_suffix:
+                default: ''
+            validation_client_name:
+                default: ''
+            validation_key:
+                default: ''
+            version:
+                default: ''
+            cookbooks:
+                default: ''
+            environments:
+                default: ''
+            data_bags:
+                default: ''
+            roles:
+                default: ''
+            version:
+                default: ''
+            runlist:
+                default: ''
+            runlists:
+                default: {}
+            attributes:
+                default: {}
+            chef_config:
+                default: {}
 
 relationships:
     cloudify.chef.depends_on:

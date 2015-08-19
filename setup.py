@@ -29,6 +29,7 @@ setuptools.setup(
     install_requires=[
         'cloudify-plugins-common>=3.3a4',
         'requests',
+        'pyyaml'
     ],
     package_data={
         'chef_plugin': [

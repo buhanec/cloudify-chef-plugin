@@ -16,7 +16,7 @@
 from cloudify import context
 from cloudify.decorators import operation as _operation
 
-from chef_plugin.chef_client import run_chef
+from chef_plugin.chef_client import (get_chef_config, run_chef)
 
 EXPECTED_OP_PREFIXES = (
     'cloudify.interfaces.lifecycle',
@@ -34,20 +34,19 @@ def _extract_op(ctx):
 
 @_operation
 def operation(ctx, **kwargs):
-    if ctx.type == context.NODE_INSTANCE:
-        properties = ctx.node.properties
-    else:
-        properties = ctx.source.node.properties
+    chef_config = get_chef_config(ctx)
 
-    if 'runlist' in properties['chef_config']:
+    ctx.logger.info('chef config: %s', chef_config)
+
+    if 'runlist' in chef_config:
         ctx.logger.info("Using explicitly provided Chef runlist")
-        runlist = properties['chef_config']['runlist']
+        runlist = chef_config['runlist']
     else:
         op = _extract_op(ctx)
-        if op not in properties['chef_config']['runlists']:
+        if op not in chef_config['runlists']:
             ctx.logger.warn("No Chef runlist for operation {0}".format(op))
         ctx.logger.info("Using Chef runlist for operation {0}".format(op))
-        runlist = properties['chef_config']['runlists'].get(op)
+        runlist = chef_config['runlists'].get(op)
 
     if isinstance(runlist, list):
         runlist = ','.join(runlist)
