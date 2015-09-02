@@ -250,7 +250,7 @@ class ChefManager(object):
         """ Get Chef's node_name for this YAML node """
         instance = self.get_instance(self.ctx)
         name = self.ctx.bootstrap_context.resources_prefix + \
-               self.ctx.deployment.id + '_' + instance.id
+            self.ctx.deployment.id + '_' + instance.id
         node_id = re.sub(r'[^a-zA-Z0-9-]', "-", str(name))
         cc = get_chef_config(self.ctx)
         return cc['node_name_prefix'] + node_id + cc['node_name_suffix']
