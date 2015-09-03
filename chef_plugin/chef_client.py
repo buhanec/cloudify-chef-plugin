@@ -81,6 +81,7 @@ def _recursive_update(a, b):
 
 
 def get_chef_config(ctx):
+    """Generate Chef config based on properties and runtime properties."""
     if ctx.type == context.NODE_INSTANCE:
         properties = ctx.node.properties
         attributes = ctx.instance.runtime_properties
@@ -114,15 +115,21 @@ def get_chef_config(ctx):
 
 
 def get_chef_runtime(ctx):
+    """Retreive runtime_properties."""
     if ctx.type == context.NODE_INSTANCE:
-        attributes = ctx.instance.runtime_properties
+        runtime_properties = ctx.instance.runtime_properties
     else:
-        attributes = ctx.source.instance.runtime_properties
+        runtime_properties = ctx.source.instance.runtime_properties
 
-    attributes = {k: attributes[k] for k in attributes}
-    attributes = copy.deepcopy(attributes)
+    return copy.deepcopy(runtime_properties)
 
-    return attributes
+
+def get_chef_runtime_reference(ctx):
+    """Retreive runtime_properties."""
+    if ctx.type == context.NODE_INSTANCE:
+        return ctx.instance.runtime_properties
+    else:
+        return ctx.source.instance.runtime_properties
 
 
 class SudoError(Exception):
@@ -755,8 +762,10 @@ def _process_rel_runtime_props(ctx, data):
 
 
 def _prepare_chef_attributes(ctx):
+    """Prepare Chef attributes, and update any existing attributes in RP."""
     chef_config = get_chef_config(ctx)
     chef_runtime = get_chef_runtime(ctx)
+    chef_runtime_ref = get_chef_runtime_reference(ctx)
 
     chef_attributes = chef_config.get('attributes', {})
 
@@ -790,6 +799,9 @@ def _prepare_chef_attributes(ctx):
     chef_attributes = _process_rel_runtime_props(ctx, chef_attributes)
 
     ctx.logger.debug('_prepare_chef_attributes: %s', chef_attributes)
+
+    chef_runtime_ref['chef_attributes'] = chef_runtime_ref.get(
+        'chef_attributes', {}).update(chef_attributes)
 
     return chef_attributes
 
