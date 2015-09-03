@@ -32,10 +32,10 @@ import stat
 import urllib
 import urlparse
 import tempfile
-import time
 import subprocess
 import json
 import yaml
+import lockfile
 
 import requests
 
@@ -48,12 +48,8 @@ SOLO_COOKBOOKS_FILE = "cookbooks.tar.gz"
 ENVS_MIN_VER = [11, 8]
 ENVS_MIN_VER_STR = '.'.join(map(str, ENVS_MIN_VER))
 
-# RetryingLock() arguments: path, retries, sleep
-tmp_dir = os.environ.get('TMPDIR', '/tmp')
-CHEF_INSTALL_LOCK = (
-    os.path.join(tmp_dir, 'cloudify-plugin-chef.install-lock'), 30, 10)  # 5min
-CHEF_CLIENT_LOCK = (
-    os.path.join(tmp_dir, 'cloudify-plugin-chef.client-lock'), 30, 20)  # 10min
+install_lock = lockfile.LockFile(os.path.join(os.environ.get('TMPDIR', '/tmp'),
+                                 'cloudify-plugin-chef.install-lock'))
 
 COMMON_DIRS = {
     'checksum_path': 'checksums',
@@ -68,7 +64,12 @@ COMMON_DIRS = {
 
 
 def _recursive_update(a, b):
-    """Add/update nested elements from b to a."""
+    """
+    Recursively update dict `a` with dict `b`.
+
+    :param a: Dictionary to update
+    :param b: Dictionary to update from
+    """
     k_a = set(a.keys())
     k_b = set(b.keys())
     for k in k_a & k_b:
@@ -80,14 +81,19 @@ def _recursive_update(a, b):
         a[k] = b[k]
 
 
-def get_chef_config(ctx):
-    """Generate Chef config based on properties and runtime properties."""
-    if ctx.type == context.NODE_INSTANCE:
-        properties = ctx.node.properties
-        attributes = ctx.instance.runtime_properties
-    else:
-        properties = ctx.source.node.properties
-        attributes = ctx.source.instance.runtime_properties
+def get_chef_config(ctx, source=True):
+    """
+    Generate Chef config based on both node properties and runtime properties
+    of the instantiated node. If used in a relationship, it bases the config on
+    the source instance's runtime properties by default.
+
+    :param ctx: Cloudify context
+    :param source: Whether to get the source or target node's properties if
+     used in a relationship operation
+    :return:
+    """
+    properties = get_properties(ctx, source)
+    runtime_properties = get_runtime_properties(ctx, source)
 
     # Start with the "old" type config as a base
     chef_config = copy.deepcopy(properties['chef_config'])
@@ -107,29 +113,48 @@ def get_chef_config(ctx):
     ctx.logger.debug('Config second pass: %s', chef_config)
 
     # Override with runtime properties
-    _recursive_update(chef_config, attributes.get('chef_config', {}))
+    _recursive_update(chef_config, runtime_properties.get('chef_config', {}))
 
     ctx.logger.debug('Config third pass: %s', chef_config)
 
     return chef_config
 
 
-def get_chef_runtime(ctx):
-    """Retreive runtime_properties."""
+def get_properties(ctx, source=True):
+    """
+    Returns the node properties dict of the instance. If used in a
+    relationship, it returns the source instances's node properties by default.
+
+    :param ctx: Cloudify context
+    :param source: Whether to get the source or target node's properties if
+     used in a relationship operation
+    :return: Node properties
+    """
     if ctx.type == context.NODE_INSTANCE:
-        runtime_properties = ctx.instance.runtime_properties
+        return ctx.node.properties
+    elif source:
+        return ctx.source.node.properties
     else:
-        runtime_properties = ctx.source.instance.runtime_properties
-
-    return copy.deepcopy(runtime_properties)
+        return ctx.target.node.properties
 
 
-def get_chef_runtime_reference(ctx):
-    """Retreive runtime_properties."""
+def get_runtime_properties(ctx, source=True):
+    """
+    Returns the runtime properties dict of the instance. If used in a
+    relationship, it returns the source instances's runtime properties by
+    default.
+
+    :param ctx: Cloudify context
+    :param source: Whether to get the source or target instances's properties
+     if used in a relationship operation
+    :return: Instance runtime properties
+    """
     if ctx.type == context.NODE_INSTANCE:
         return ctx.instance.runtime_properties
-    else:
+    elif source:
         return ctx.source.instance.runtime_properties
+    else:
+        return ctx.target.instance.runtime_properties
 
 
 class SudoError(Exception):
@@ -143,72 +168,10 @@ class ChefError(Exception):
     """An exception for all chef related errors"""
 
 
-# TODO: update to signal-based timeout lock
-class RetryingLock(object):
-
-    def __init__(self, ctx, path, retries, sleep):
-        self.ctx = ctx
-        self.path = path
-        self.retries = retries
-        self.sleep = sleep
-        self.acquired = False
-
-    def __enter__(self):
-        self.ctx.logger.info("Using lock file {0}".format(self.path))
-        self.file = open(self.path, 'w+')
-        if self.ctx.type == context.NODE_INSTANCE:
-            node = self.ctx.node
-            instance = self.ctx.instance
-        else:
-            node = self.ctx.source.node
-            instance = self.ctx.source.instance
-        for i in range(0, self.retries):
-            try:
-                flock(self.file, LOCK_EX | LOCK_NB)
-            except IOError:
-                self.ctx.logger.info("Could not lock the file '{0}'."
-                                     "Will sleep for {1} seconds and then try "
-                                     "again.".format(self.path, self.sleep))
-                time.sleep(self.sleep)
-            else:
-                self.acquired = True
-                self.ctx.logger.info("Acquired lock the file '{0}'."
-                                     .format(self.path))
-                self.file.truncate()
-                self.file.write("worker_pid {0}\n"
-                                "deployment_id {1}\n"
-                                "node_name {2}\n"
-                                "node_id {3}\n".format(
-                                    os.getpid(),
-                                    self.ctx.deployment.id,
-                                    node.name,
-                                    instance.id))
-                self.file.flush()
-                return
-        raise RuntimeError("Failed to lock the file '{0}'.".format(self.path))
-
-    def __exit__(self, exc_type, _v, _tb):
-        if not self.acquired:
-            return
-        self.file.seek(0)
-        self.file.truncate()
-        self.file.write("unused\n")
-        self.file.flush()
-        flock(self.file, LOCK_UN)
-        self.file.close()
-        self.ctx.logger.info("Released lock the file '{0}'.".format(self.path))
-
-
 class ChefManager(object):
 
     def __init__(self, ctx):
         self.ctx = ctx
-
-    @classmethod
-    def get_node_properties(cls, ctx):
-        if ctx.type == context.NODE_INSTANCE:
-            return ctx.node.properties
-        return ctx.source.node.properties
 
     @classmethod
     def get_node(cls, ctx):
@@ -272,8 +235,8 @@ class ChefManager(object):
         chef_config = get_chef_config(ctx)
         chef_version = chef_config['version']
 
-        with RetryingLock(ctx, *CHEF_INSTALL_LOCK):
-
+        try:
+            install_lock.acquire(300)
             current_version = self.get_version()
             if current_version:
                 if current_version == self._extract_chef_version(chef_version):
@@ -305,6 +268,9 @@ class ChefManager(object):
 
             ctx.logger.info('Setting up Chef [chef_server=\n%s]',
                             chef_config.get('chef_server_url'))
+        finally:
+            if install_lock.i_am_locking():
+                install_lock.release()
 
     def install_files(self):
         dirs = map(self.get_path, self.DIRS.values() + ['etc', 'log'])
@@ -550,10 +516,6 @@ class ChefSoloManager(ChefManager):
     }
     DIRS.update(COMMON_DIRS)
 
-    def _get_node_properties(self, ctx):
-        if ctx.type == context.NODE_INSTANCE:
-            return ctx.node.properties
-        return ctx.source.node.properties
 
     def _url_to_dir(self, url, dst_dir):
         """
@@ -764,8 +726,8 @@ def _process_rel_runtime_props(ctx, data):
 def _prepare_chef_attributes(ctx):
     """Prepare Chef attributes, and update any existing attributes in RP."""
     chef_config = get_chef_config(ctx)
-    chef_runtime = get_chef_runtime(ctx)
-    chef_runtime_ref = get_chef_runtime_reference(ctx)
+    chef_runtime_ref = get_runtime_properties(ctx)
+    chef_runtime = copy.deepcopy(chef_runtime_ref)
 
     chef_attributes = chef_config.get('attributes', {})
 

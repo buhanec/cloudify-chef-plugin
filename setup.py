@@ -29,11 +29,16 @@ setuptools.setup(
     install_requires=[
         'cloudify-plugins-common>=3.3a5',
         'requests',
-        'pyyaml'
+        'pyyaml',
+        'lockfile'
     ],
     package_data={
         'chef_plugin': [
             'chef/handler/cloudify_attributes_to_json_file.rb'
         ]
     },
+    dependency_links=[
+        "http://github.com/cloudify-cosmo/cloudify-rest-client/tarball/3.3m5#egg=cloudify-rest-client-3.3a5", # noqa
+        "http://github.com/cloudify-cosmo/cloudify-plugins-common/archive/3.3m5.zip#egg=cloudify-plugins-common-3.3a5"  # noqa
+    ]
 )
