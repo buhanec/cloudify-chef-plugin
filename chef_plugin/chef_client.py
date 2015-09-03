@@ -234,11 +234,17 @@ def get_chef_attributes(ctx):
 
 
 def available_for_root(cmd):
+    """
+    Check whether a command is available to the root user.
+
+    :param cmd: Command to check
+    :return: Boolean
+    """
     try:
         subprocess.check_call(('sudo', 'which', cmd))
     except subprocess.CalledProcessError as e:
-        return e.returncode
-    return 0
+        return False
+    return True
 
 
 class SudoError(Exception):
