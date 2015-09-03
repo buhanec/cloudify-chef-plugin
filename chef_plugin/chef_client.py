@@ -164,7 +164,7 @@ def get_properties(ctx, source=True):
      used in a relationship operation
     :return: Node properties
     """
-    return get_node_attr(ctx, 'properties')
+    return get_node_attr(ctx, 'properties', source)
 
 
 def get_runtime_properties(ctx, source=True):
@@ -178,7 +178,7 @@ def get_runtime_properties(ctx, source=True):
      if used in a relationship operation
     :return: Instance runtime properties
     """
-    return get_inst_attr(ctx, 'runtime_properties')
+    return get_inst_attr(ctx, 'runtime_properties', source)
 
 
 class SudoError(Exception):
@@ -193,6 +193,12 @@ class ChefError(Exception):
 
 
 class ChefManager(object):
+
+    """Base class for Chef clients, should not be used alone."""
+
+    NAME = 'base'
+    REQUIRED_ARGS = set()
+    DIRS = {}
 
     def __init__(self, ctx):
         self.ctx = ctx
@@ -211,6 +217,9 @@ class ChefManager(object):
             raise ChefError(
                 "The following required field(s) "
                 "are missing: {0}".format(", ".join(missing_fields)))
+
+    def _get_binary(self):
+        pass
 
     def get_version(self):
         """Check if chef-client is available and is of the right version"""
@@ -261,7 +270,7 @@ class ChefManager(object):
                         "Uninstalling Chef: requested version {0} "
                         "does not match the installed version {1}".format(
                             chef_version, current_version))
-                    self.uninstall(ctx)
+                    self.uninstall()
 
             ctx.logger.info('Installing Chef [chef_version=%s]', chef_version)
             chef_install_script = tempfile.NamedTemporaryFile(
@@ -651,9 +660,9 @@ def get_manager(ctx):
                 "Chef manager class to be used: {0}".format(cls.__name__))
             cls.assert_args(ctx)
             return cls(ctx)
-    arguments_sets = '; '.join(
-        ['(for ' + m.NAME + '): ' + ', '.join(
-            list(m.REQUIRED_ARGS)) for m in managers])
+    arguments_sets = '; '.join('(for {}: {}'
+                               .format(m.NAME, ', '.join(m.REQUIRED_ARGS))
+                               for m in managers)
     chef_config = get_chef_config(ctx)
     raise ChefError("Failed to find appropriate Chef manager "
                     "for the specified arguments ({0}). "
