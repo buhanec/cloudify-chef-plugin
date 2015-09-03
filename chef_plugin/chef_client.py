@@ -23,8 +23,6 @@ which import the `run_chef` function.
 TODO: stop passing ctx around?
 """
 
-from fcntl import flock, LOCK_EX, LOCK_UN, LOCK_NB
-
 import copy
 import re
 import os
@@ -81,19 +79,17 @@ def _recursive_update(a, b):
         a[k] = b[k]
 
 
-def get_chef_config(ctx, source=True):
+def get_chef_config(ctx):
     """
     Generate Chef config based on both node properties and runtime properties
     of the instantiated node. If used in a relationship, it bases the config on
     the source instance's runtime properties by default.
 
     :param ctx: Cloudify context
-    :param source: Whether to get the source or target node's properties if
-     used in a relationship operation
-    :return:
+    :return: Chef config dict
     """
-    properties = get_properties(ctx, source)
-    runtime_properties = get_runtime_properties(ctx, source)
+    properties = get_properties(ctx)
+    runtime_properties = get_runtime_properties(ctx)
 
     # Start with the "old" type config as a base
     chef_config = copy.deepcopy(properties['chef_config'])
@@ -120,6 +116,44 @@ def get_chef_config(ctx, source=True):
     return chef_config
 
 
+def get_node_attr(ctx, attr, source=True):
+    """
+    Return the value of a given node attribute. If used in a relationship, it
+    returns the source instance's node attribute by default.
+
+    :param ctx: Cloudify context
+    :param attr: Attribute to get
+    :param source: Whether to get the source or target node's attribute if
+     used in a relationship operation
+    :return: Value of the attribute
+    """
+    if ctx.type == context.NODE_INSTANCE:
+        return getattr(ctx.node, attr)
+    elif source:
+        return getattr(ctx.source.node, attr)
+    else:
+        return getattr(ctx.target.node, attr)
+
+
+def get_inst_attr(ctx, attr, source=True):
+    """
+    Return the value of a given instance attribute. If used in a relationship,
+    it returns the source instance's attribute by default.
+
+    :param ctx: Cloudify context
+    :param attr: Attribute to get
+    :param source: Whether to get the source or target's instance attribute if
+     used in a relationship operation
+    :return: Value of the attribute
+    """
+    if ctx.type == context.NODE_INSTANCE:
+        return getattr(ctx.instance, attr)
+    elif source:
+        return getattr(ctx.source.instance, attr)
+    else:
+        return getattr(ctx.target.instance, attr)
+
+
 def get_properties(ctx, source=True):
     """
     Returns the node properties dict of the instance. If used in a
@@ -130,12 +164,7 @@ def get_properties(ctx, source=True):
      used in a relationship operation
     :return: Node properties
     """
-    if ctx.type == context.NODE_INSTANCE:
-        return ctx.node.properties
-    elif source:
-        return ctx.source.node.properties
-    else:
-        return ctx.target.node.properties
+    return get_node_attr(ctx, 'properties')
 
 
 def get_runtime_properties(ctx, source=True):
@@ -149,12 +178,7 @@ def get_runtime_properties(ctx, source=True):
      if used in a relationship operation
     :return: Instance runtime properties
     """
-    if ctx.type == context.NODE_INSTANCE:
-        return ctx.instance.runtime_properties
-    elif source:
-        return ctx.source.instance.runtime_properties
-    else:
-        return ctx.target.instance.runtime_properties
+    return get_inst_attr(ctx, 'runtime_properties')
 
 
 class SudoError(Exception):
@@ -172,18 +196,6 @@ class ChefManager(object):
 
     def __init__(self, ctx):
         self.ctx = ctx
-
-    @classmethod
-    def get_node(cls, ctx):
-        if ctx.type == context.NODE_INSTANCE:
-            return ctx.node
-        return ctx.source.node
-
-    @classmethod
-    def get_instance(cls, ctx):
-        if ctx.type == context.NODE_INSTANCE:
-            return ctx.instance
-        return ctx.source.instance
 
     @classmethod
     def can_handle(cls, ctx):
@@ -214,13 +226,12 @@ class ChefManager(object):
         """ Get Chef root for this YAML node """
         # XXX: probably not fully cross-platform
         return os.path.join(os.sep, 'var', 'chef',
-                            'cloudify-node-' + self.get_node(self.ctx).id)
+                            'cloudify-node-' + get_node_attr(self.ctx, 'id'))
 
     def get_chef_node_name(self):
         """ Get Chef's node_name for this YAML node """
-        instance = self.get_instance(self.ctx)
         name = self.ctx.bootstrap_context.resources_prefix + \
-            self.ctx.deployment.id + '_' + instance.id
+            self.ctx.deployment.id + '_' + get_inst_attr(self.ctx, 'id')
         node_id = re.sub(r'[^a-zA-Z0-9-]', "-", str(name))
         cc = get_chef_config(self.ctx)
         return cc['node_name_prefix'] + node_id + cc['node_name_suffix']
@@ -341,7 +352,7 @@ class ChefManager(object):
         self._prepare_for_run(runlist)
 
         t = 'cloudify_chef_attrs_in.{0}.{1}.{2}.'.format(
-            self.get_node(ctx).name, self.get_instance(ctx).id, os.getpid())
+            get_node_attr(ctx, 'name'), get_inst_attr(ctx, 'id'), os.getpid())
         self.attribute_file = tempfile.NamedTemporaryFile(prefix=t,
                                                           suffix=".json",
                                                           delete=False)
