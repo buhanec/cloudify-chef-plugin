@@ -40,7 +40,7 @@ import requests
 from cloudify import context
 
 
-CHEF_INSTALLER_URL = "https://www.opscode.com/chef/install.sh"
+CHEF_INSTALLER_URL = 'https://www.opscode.com/chef/install.sh'
 SOLO_COOKBOOKS_FILE = "cookbooks.tar.gz"
 
 ENVS_MIN_VER = [11, 8]
@@ -209,8 +209,8 @@ def get_chef_attributes(ctx):
                     chef_attributes = json.loads(ctx.get_resource_and_render(
                         chef_attributes, chef_runtime_properties_copy))
             except Exception as e:
-                raise ChefError("Failed parsing of chef chef_attributes ({}): "
-                                "{}".format(e, chef_attributes))
+                raise ChefError('Failed parsing of chef chef_attributes ({}): '
+                                '{}'.format(e, chef_attributes))
 
     if 'cloudify' in chef_attributes:
         raise ValueError("Chef attributes must not contain 'cloudify'")
@@ -266,9 +266,6 @@ class ChefManager(object):
     REQUIRED_ARGS = set()
     DIRS = {}
 
-    def __init__(self, ctx):
-        self.ctx = ctx
-
     @classmethod
     def can_handle(cls, ctx):
         """
@@ -291,8 +288,11 @@ class ChefManager(object):
             - set(get_chef_config(ctx))
         if missing_fields:
             raise ChefError(
-                "The following required argument(s) "
-                "are missing: {0}".format(", ".join(missing_fields)))
+                'The following required argument(s) '
+                'are missing: {0}'.format(', '.join(missing_fields)))
+
+    def __init__(self, ctx):
+        self.ctx = ctx
 
     def _get_binary(self):
         """
@@ -320,7 +320,7 @@ class ChefManager(object):
             return None
 
         return self._extract_chef_version(
-            subprocess.check_output(["/usr/bin/sudo", binary, "--version"])
+            subprocess.check_output(['/usr/bin/sudo', binary, '--version'])
         )
 
     def get_chef_data_root(self):
@@ -347,7 +347,7 @@ class ChefManager(object):
             get_inst_attr(self.ctx, 'id'),
             chef_config['node_name_suffix']
         )
-        return re.sub(r'[^a-zA-Z0-9._-]', "-", str(name))
+        return re.sub(r'[^a-zA-Z0-9._-]', '-', str(name))
 
     def get_path(self, *p):
         """
@@ -359,7 +359,9 @@ class ChefManager(object):
         return os.path.join(self.get_chef_data_root(), *p)
 
     def install(self):
-        """If needed, install chef-client and point it to the server"""
+        """
+        If needed, install chef-client and point it to the server.
+        """
         ctx = self.ctx
         chef_config = get_chef_config(ctx)
         chef_version = chef_config['version']
@@ -371,30 +373,30 @@ class ChefManager(object):
             if current_version:
                 if current_version == self._extract_chef_version(chef_version):
                     ctx.logger.info(
-                        "Chef version {0} is already installed. "
-                        "Skipping installation.".format(chef_version))
+                        'Chef version {0} is already installed. '
+                        'Skipping installation.'.format(chef_version))
                     return
                 else:
-                    # XXX: not tested
+                    # TODO: not tested
                     ctx.logger.info(
-                        "Uninstalling Chef: requested version {0} "
-                        "does not match the installed version {1}".format(
+                        'Uninstalling Chef: requested version {0} '
+                        'does not match the installed version {1}'.format(
                             chef_version, current_version))
                     self.uninstall()
 
             ctx.logger.info('Installing Chef [chef_version=%s]', chef_version)
             chef_install_script = tempfile.NamedTemporaryFile(
-                suffix="install.sh", delete=False)
+                suffix='install.sh', delete=False)
             chef_install_script.close()
             try:
                 urllib.urlretrieve(CHEF_INSTALLER_URL,
                                    chef_install_script.name)
                 os.chmod(chef_install_script.name, stat.S_IRWXU)
-                self._sudo(chef_install_script.name, "-v", chef_version)
+                self._sudo(chef_install_script.name, '-v', chef_version)
                 os.remove(chef_install_script.name)
                 # on failure, leave for debugging
             except Exception as exc:
-                raise ChefError("Chef install failed on:\n%s" % exc)
+                raise ChefError('Chef install failed on:\n' + exc)
 
             ctx.logger.info('Setting up Chef [chef_server=\n%s]',
                             chef_config.get('chef_server_url'))
@@ -403,9 +405,12 @@ class ChefManager(object):
                 install_lock.release()
 
     def install_files(self):
+        """
+        Prepare installation files. Extended by real clients.
+        """
         dirs = map(self.get_path, self.DIRS.values() + ['etc', 'log'])
-        self._sudo("mkdir", "-p", *dirs)
-        self._sudo("chmod", "700", self.get_chef_data_root())
+        self._sudo('mkdir', '-p', *dirs)
+        self._sudo('chmod', '700', self.get_chef_data_root())
         self.install_chef_handler()
 
     def install_chef_handler(self):
@@ -826,7 +831,6 @@ def _process_rel_runtime_props(ctx, data):
             orig_path = path[:]
             try:
                 while path:
-                    # print("K={} V={} PATH={} PTR={}".format(k, v, path, ptr))
                     ptr = ptr[path.pop(0)]
             except KeyError:
                 if 'default_value' in v:
