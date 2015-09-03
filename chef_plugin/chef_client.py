@@ -46,8 +46,9 @@ SOLO_COOKBOOKS_FILE = "cookbooks.tar.gz"
 ENVS_MIN_VER = [11, 8]
 ENVS_MIN_VER_STR = '.'.join(map(str, ENVS_MIN_VER))
 
-install_lock = lockfile.LockFile(os.path.join(os.environ.get('TMPDIR', '/tmp'),
-                                 'cloudify-plugin-chef.install-lock'))
+VAR_CHEF = os.path.join(os.sep, 'var', 'chef')
+TMP_LOCK = os.path.join(os.environ.get('TMPDIR', os.path.join(os.sep, '/tmp')),
+                        'cloudify-plugin-chef.install-lock')
 
 COMMON_DIRS = {
     'checksum_path': 'checksums',
@@ -77,43 +78,6 @@ def _recursive_update(a, b):
             a[k] = b[k]
     for k in k_b - k_a:
         a[k] = b[k]
-
-
-def get_chef_config(ctx):
-    """
-    Generate Chef config based on both node properties and runtime properties
-    of the instantiated node. If used in a relationship, it bases the config on
-    the source instance's runtime properties by default.
-
-    :param ctx: Cloudify context
-    :return: Chef config dict
-    """
-    properties = get_properties(ctx)
-    runtime_properties = get_runtime_properties(ctx)
-
-    # Start with the "old" type config as a base
-    chef_config = copy.deepcopy(properties['chef_config'])
-
-    ctx.logger.debug('Config first pass: %s', chef_config)
-
-    # Override with the "new" type config
-    for k in properties:
-        if k == 'chef_config':
-            continue
-        elif k.startswith('node_name_') and k in chef_config \
-                and len(chef_config[k]) and not len(properties[k]):
-            continue
-        elif len(properties[k]) or k.startswith('node_name_'):
-            chef_config[k] = copy.deepcopy(properties[k])
-
-    ctx.logger.debug('Config second pass: %s', chef_config)
-
-    # Override with runtime properties
-    _recursive_update(chef_config, runtime_properties.get('chef_config', {}))
-
-    ctx.logger.debug('Config third pass: %s', chef_config)
-
-    return chef_config
 
 
 def get_node_attr(ctx, attr, source=True):
@@ -181,6 +145,102 @@ def get_runtime_properties(ctx, source=True):
     return get_inst_attr(ctx, 'runtime_properties', source)
 
 
+def get_chef_config(ctx):
+    """
+    Generate Chef config based on both node properties and runtime properties
+    of the instantiated node. If used in a relationship, it bases the config on
+    the source instance's runtime properties by default.
+
+    :param ctx: Cloudify context
+    :return: Chef config dict
+    """
+    properties = get_properties(ctx)
+    runtime_properties = get_runtime_properties(ctx)
+
+    # Start with the "old" type config as a base
+    chef_config = copy.deepcopy(properties['chef_config'])
+
+    ctx.logger.debug('Config first pass: %s', chef_config)
+
+    # Override with the "new" type config
+    for k in properties:
+        if k == 'chef_config':
+            continue
+        elif k.startswith('node_name_') and k in chef_config \
+                and len(chef_config[k]) and not len(properties[k]):
+            continue
+        elif len(properties[k]) or k.startswith('node_name_'):
+            chef_config[k] = copy.deepcopy(properties[k])
+
+    ctx.logger.debug('Config second pass: %s', chef_config)
+
+    # Override with runtime properties
+    _recursive_update(chef_config, runtime_properties.get('chef_config', {}))
+
+    ctx.logger.debug('Config third pass: %s', chef_config)
+
+    return chef_config
+
+
+def get_chef_attributes(ctx):
+    """
+    Prepare Chef attributes, and update any existing attributes in the runtime
+    properties.
+
+    :param ctx: Cloudify context
+    :return: Dict representing Chef attributes
+    """
+    chef_config = get_chef_config(ctx)
+    chef_runtime_properties = get_runtime_properties(ctx)
+    chef_runtime_properties_copy = copy.deepcopy(chef_runtime_properties)
+
+    chef_attributes = chef_config.get('attributes', {})
+
+    # If chef_attributes is JSON or a file
+    if isinstance(chef_attributes, basestring):
+        try:
+            chef_attributes = json.loads(chef_attributes)
+        except ValueError:
+            try:
+                if chef_attributes.rsplit('.', 1)[-1] == 'yaml':
+                    chef_attributes = yaml.load(ctx.get_resource_and_render(
+                        chef_attributes, chef_runtime_properties_copy))
+                else:
+                    chef_attributes = json.loads(ctx.get_resource_and_render(
+                        chef_attributes, chef_runtime_properties_copy))
+            except Exception as e:
+                raise ChefError("Failed parsing of chef chef_attributes ({}): "
+                                "{}".format(e, chef_attributes))
+
+    if 'cloudify' in chef_attributes:
+        raise ValueError("Chef attributes must not contain 'cloudify'")
+
+    ctx.logger.debug('Attributes generated: %s', chef_attributes)
+
+    chef_attributes['cloudify'] = _context_to_struct(ctx)
+
+    if ctx.type == context.RELATIONSHIP_INSTANCE:
+        chef_attributes['cloudify'][
+            'related'] = _context_to_struct(ctx, target=True)
+
+    chef_attributes = _process_rel_runtime_props(ctx, chef_attributes)
+
+    ctx.logger.debug('get_chef_attributes: %s', chef_attributes)
+
+    chef_runtime_properties['chef_attributes'] = chef_runtime_properties.get(
+        'chef_attributes', {}).update(chef_attributes)
+
+    return chef_attributes
+
+
+def available_for_root(cmd):
+    try:
+        subprocess.check_call(('sudo', 'which', cmd))
+    except subprocess.CalledProcessError as e:
+        return e.returncode
+    return 0
+
+
 class SudoError(Exception):
 
     """An internal exception for failures when running
@@ -205,26 +265,52 @@ class ChefManager(object):
 
     @classmethod
     def can_handle(cls, ctx):
-        # All of the required args exist and are not None:
+        """
+        Determine whether the given Chef client can handle the given arguments.
+
+        :param ctx: Cloudify context
+        :return: Can the client handle the arguments
+        """
         chef_config = get_chef_config(ctx)
         return not cls.REQUIRED_ARGS - set(chef_config)
 
     @classmethod
     def assert_args(cls, ctx):
+        """
+        Determine missing arguments for a Chef client and raise if any found.
+
+        :param ctx: Cloudify context
+        """
         missing_fields = (cls.REQUIRED_ARGS | {'version'}) \
-                         - set(get_chef_config(ctx))
+            - set(get_chef_config(ctx))
         if missing_fields:
             raise ChefError(
-                "The following required field(s) "
+                "The following required argument(s) "
                 "are missing: {0}".format(", ".join(missing_fields)))
 
     def _get_binary(self):
+        """
+        Get Chef binary. Must be implemented by real clients.
+        """
+        pass
+
+    def _get_cmd(self, runlist):
+        """
+        Get Chef command to perform Chef operations. Must be implemented by
+        real clients.
+
+        :param runlist: Runlist to run
+        """
         pass
 
     def get_version(self):
-        """Check if chef-client is available and is of the right version"""
+        """
+        Get the client version.
+
+        :return: None if unavailable, or version if available.
+        """
         binary = self._get_binary()
-        if not self._prog_available_for_root(binary):
+        if not available_for_root(binary):
             return None
 
         return self._extract_chef_version(
@@ -232,21 +318,38 @@ class ChefManager(object):
         )
 
     def get_chef_data_root(self):
-        """ Get Chef root for this YAML node """
-        # XXX: probably not fully cross-platform
-        return os.path.join(os.sep, 'var', 'chef',
+        """
+        Get Chef root for this YAML node
+
+        :return: Path to data root
+        """
+        # TODO: verify cross-compatibility
+        return os.path.join(VAR_CHEF,
                             'cloudify-node-' + get_node_attr(self.ctx, 'id'))
 
     def get_chef_node_name(self):
-        """ Get Chef's node_name for this YAML node """
-        name = self.ctx.bootstrap_context.resources_prefix + \
-            self.ctx.deployment.id + '_' + get_inst_attr(self.ctx, 'id')
-        node_id = re.sub(r'[^a-zA-Z0-9-]', "-", str(name))
-        cc = get_chef_config(self.ctx)
-        return cc['node_name_prefix'] + node_id + cc['node_name_suffix']
+        """
+        Get Chef's node_name for this YAML node.
+
+        :return: Escaped unique node name
+        """
+        chef_config = get_chef_config(self.ctx)
+        name = '{}{}{}_{}{}'.format(
+            chef_config['node_name_prefix'],
+            self.ctx.bootstrap_context.resources_prefix,
+            self.ctx.deployment.id,
+            get_inst_attr(self.ctx, 'id'),
+            chef_config['node_name_suffix']
+        )
+        return re.sub(r'[^a-zA-Z0-9._-]', "-", str(name))
 
     def get_path(self, *p):
-        """ Get absolute path to a file under Chef root """
+        """
+        Get absolute path to a file under Chef root.
+
+        :param p: Path segments
+        :return: Path to file
+        """
         return os.path.join(self.get_chef_data_root(), *p)
 
     def install(self):
@@ -255,6 +358,7 @@ class ChefManager(object):
         chef_config = get_chef_config(ctx)
         chef_version = chef_config['version']
 
+        install_lock = lockfile.LockFile(TMP_LOCK)
         try:
             install_lock.acquire(300)
             current_version = self.get_version()
@@ -342,7 +446,7 @@ class ChefManager(object):
 
         def apt_platform():
             # Assuming that if apt-get exists, it's how chef was installed
-            return self._prog_available_for_root('apt-get')
+            return available_for_root('apt-get')
 
         if apt_platform():
             ctx.logger.info("Uninstalling old Chef via apt-get")
@@ -392,12 +496,6 @@ class ChefManager(object):
             raise ChefError(
                 "Failed to read chef version - '%s'" % version_string)
 
-    def _prog_available_for_root(self, prog):
-        with open(os.devnull, "w") as fnull:
-            which_exitcode = subprocess.call(
-                ["/usr/bin/sudo", "which", prog], stdout=fnull, stderr=fnull)
-        return which_exitcode == 0
-
     def _log_text(self, title, prefix, text):
         ctx = self.ctx
         if not text:
@@ -424,8 +522,6 @@ class ChefManager(object):
         #       per log level? Also see comment under run_chef()
         stdout = tempfile.TemporaryFile('rw+b')
         stderr = tempfile.TemporaryFile('rw+b')
-        out = None
-        err = None
         try:
             subprocess.check_call(cmd, stdout=stdout, stderr=stderr)
             out = get_file_contents(stdout)
@@ -535,7 +631,6 @@ class ChefSoloManager(ChefManager):
         'sandbox_path': 'sandbox'
     }
     DIRS.update(COMMON_DIRS)
-
 
     def _url_to_dir(self, url, dst_dir):
         """
@@ -743,51 +838,6 @@ def _process_rel_runtime_props(ctx, data):
     return ret
 
 
-def _prepare_chef_attributes(ctx):
-    """Prepare Chef attributes, and update any existing attributes in RP."""
-    chef_config = get_chef_config(ctx)
-    chef_runtime_ref = get_runtime_properties(ctx)
-    chef_runtime = copy.deepcopy(chef_runtime_ref)
-
-    chef_attributes = chef_config.get('attributes', {})
-
-    # If chef_attributes is JSON or a file
-    if isinstance(chef_attributes, basestring):
-        try:
-            chef_attributes = json.loads(chef_attributes)
-        except ValueError:
-            try:
-                if chef_attributes.rsplit('.', 1)[-1] == 'yaml':
-                    chef_attributes = yaml.load(ctx.get_resource_and_render(
-                        chef_attributes, chef_runtime))
-                else:
-                    chef_attributes = json.loads(ctx.get_resource_and_render(
-                        chef_attributes, chef_runtime))
-            except Exception as e:
-                raise ChefError("Failed parsing of chef chef_attributes ({}): "
-                                "{}".format(e, chef_attributes))
-
-    if 'cloudify' in chef_attributes:
-        raise ValueError("Chef attributes must not contain 'cloudify'")
-
-    ctx.logger.debug('Attributes generated: %s', chef_attributes)
-
-    chef_attributes['cloudify'] = _context_to_struct(ctx)
-
-    if ctx.type == context.RELATIONSHIP_INSTANCE:
-        chef_attributes['cloudify'][
-            'related'] = _context_to_struct(ctx, target=True)
-
-    chef_attributes = _process_rel_runtime_props(ctx, chef_attributes)
-
-    ctx.logger.debug('_prepare_chef_attributes: %s', chef_attributes)
-
-    chef_runtime_ref['chef_attributes'] = chef_runtime_ref.get(
-        'chef_attributes', {}).update(chef_attributes)
-
-    return chef_attributes
-
-
 def run_chef(ctx, runlist):
     """Run given runlist using Chef.
     ctx.node.properties.chef_config.chef_attributes can be a dict or a JSON.
@@ -796,7 +846,7 @@ def run_chef(ctx, runlist):
     if runlist is None:
         return
 
-    chef_attributes = _prepare_chef_attributes(ctx)
+    chef_attributes = get_chef_attributes(ctx)
 
     if ctx.type == context.NODE_INSTANCE:
         node = ctx.node
