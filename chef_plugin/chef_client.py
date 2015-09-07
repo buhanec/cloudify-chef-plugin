@@ -47,7 +47,7 @@ ENVS_MIN_VER = [11, 8]
 ENVS_MIN_VER_STR = '.'.join(map(str, ENVS_MIN_VER))
 
 VAR_CHEF = os.path.join(os.sep, 'var', 'chef')
-TMP_LOCK = os.path.join(os.environ.get('TMPDIR', os.path.join(os.sep, '/tmp')),
+TMP_LOCK = os.path.join(os.environ.get('TMPDIR', os.path.join(os.sep, 'tmp')),
                         'cloudify-plugin-chef.install-lock')
 
 COMMON_DIRS = {
