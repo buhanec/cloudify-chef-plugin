@@ -13,7 +13,6 @@
 #    * See the License for the specific language governing permissions and
 #    * limitations under the License.
 
-from cloudify import context
 from cloudify.decorators import operation as _operation
 
 from chef_plugin.chef_client import (get_chef_config, run_chef)
@@ -36,7 +35,8 @@ def _extract_op(ctx):
 def operation(ctx, **kwargs):
     chef_config = get_chef_config(ctx)
 
-    ctx.logger.info('chef config: %s', chef_config)
+    ctx.logger.warn('Unused kwargs: %s', kwargs)
+    ctx.logger.info('Chef config: %s', chef_config)
 
     if 'runlist' in chef_config:
         ctx.logger.info("Using explicitly provided Chef runlist")

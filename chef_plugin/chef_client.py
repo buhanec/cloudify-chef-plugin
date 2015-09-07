@@ -449,28 +449,29 @@ class ChefManager(object):
         return s
 
     def uninstall(self):
-        """Uninstall chef-client - currently only supporting apt-get"""
-        # TODO: I didn't find a single method encouraged by opscode,
-        #      so we need to add manually for any supported platform
-
+        """
+        Uninstall chef-client - currently only supporting apt-get.
+        """
+        # TODO: cross-platform support
         ctx = self.ctx
 
-        def apt_platform():
-            # Assuming that if apt-get exists, it's how chef was installed
-            return available_for_root('apt-get')
-
-        if apt_platform():
-            ctx.logger.info("Uninstalling old Chef via apt-get")
+        if available_for_root('apt-get'):
+            ctx.logger.info('Uninstalling old Chef via apt-get')
             try:
-                self._sudo("apt-get", "remove", "--purge", "chef", "-y")
+                self._sudo('apt-get', 'remove', '--purge', 'chef', '-y')
             except SudoError as exc:
-                raise ChefError("chef-client uninstall failed on:\n%s" % exc)
+                raise ChefError('chef-client uninstall failed on:\n' + exc)
         else:
-            ctx.logger.error(
-                "Chef uninstall is unimplemented for this platform, "
-                "proceeding anyway")
+            ctx.logger.error('Chef uninstall is unimplemented for this '
+                             'platform, proceeding anyway')
 
     def run(self, runlist, chef_attributes):
+        """
+        Perform a Chef run.
+
+        :param runlist: Runlist to process
+        :param chef_attributes: Chef attributes to use for the run
+        """
         ctx = self.ctx
         self.install_files()
         self._prepare_for_run(runlist)
@@ -490,34 +491,57 @@ class ChefManager(object):
             os.remove(self.attribute_file.name)
             # on failure, leave for debugging
         except SudoError as exc:
-            raise ChefError("The chef run failed\n"
-                            "runlist: {0}\nattributes: {1}\nexception: \n{2}".
-                            format(runlist, chef_attributes, exc))
+            raise ChefError('The chef run failed\n'
+                            'runlist: {0}\nattributes: {1}\nexception: \n{2}'
+                            .format(runlist, chef_attributes, exc))
 
     def _prepare_for_run(self, runlist):
+        """
+        Preparations before running Chef, which take place after preparing the
+        necessary Chef files. Can be implemented by real clients.
+
+        :param runlist: Runlist to process
+        """
         pass
 
     # Utilities from here to end of the class
 
-    def _extract_chef_version(self, version_string):
+    @staticmethod
+    def _extract_chef_version(version_string):
+        """
+        Extract Chef version from version string.
+
+        :param version_string: Source version string
+        :return: Chef version
+        """
         match = re.search(r'(\d+\.\d+\.\d+)', version_string)
         if match:
             return match.groups()[0]
         else:
-            raise ChefError(
-                "Failed to read chef version - '%s'" % version_string)
+            raise ChefError('Failed to read chef version - \'{}\''.format(
+                version_string))
 
     def _log_text(self, title, prefix, text):
+        """
+        Log text block.
+
+        :param title: Text block title
+        :param prefix: Text block log prefix
+        :param text: Text block
+        """
         ctx = self.ctx
         if not text:
             return
-        ctx.logger.info('*** ' + title + ' ***')
-        for line in text.splitlines():
-            ctx.logger.info(prefix + line)
+        ctx.logger.info('*** {} ***'.format(title))
+        map(lambda s: ctx.logger.info(prefix + s), text.splitlines)
 
     def _sudo(self, *args):
-        """a helper to run a subprocess with sudo, raises SudoError"""
+        """
+        A helper to run a subprocess with sudo, raises SudoError.
 
+        :param args: Command segments
+        :return: Tuple contining stdout and stderr
+        """
         ctx = self.ctx
 
         def get_file_contents(f):
@@ -537,10 +561,10 @@ class ChefManager(object):
             subprocess.check_call(cmd, stdout=stdout, stderr=stderr)
             out = get_file_contents(stdout)
             err = get_file_contents(stderr)
-            self._log_text("Chef stdout", "  [out] ", out)
-            self._log_text("Chef stderr", "  [err] ", err)
+            self._log_text('Chef stdout', '  [out] ', out)
+            self._log_text('Chef stderr', '  [err] ', err)
         except subprocess.CalledProcessError as exc:
-            raise SudoError("{exc}\nSTDOUT:\n{stdout}\nSTDERR:{stderr}".format(
+            raise SudoError('{exc}\nSTDOUT:\n{stdout}\nSTDERR:{stderr}'.format(
                 exc=exc,
                 stdout=get_file_contents(stdout),
                 stderr=get_file_contents(stderr)))
@@ -551,11 +575,16 @@ class ChefManager(object):
         return out, err
 
     def _sudo_write_file(self, filename, contents):
-        """a helper to create a file with sudo"""
+        """
+        A helper to create a file with sudo.
+
+        :param filename: Filename to write
+        :param contents:  Contents to write
+        """
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file.write(contents)
 
-        self._sudo("mv", temp_file.name, filename)
+        self._sudo('mv', temp_file.name, filename)
 
 
 class ChefClientManager(ChefManager):
