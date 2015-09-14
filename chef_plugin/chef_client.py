@@ -536,10 +536,11 @@ class ChefManager(object):
         if not text:
             return
         ctx.logger.info('*** {} ***'.format(title))
+
         try:
             map(lambda s: ctx.logger.info(prefix + s), str(text).splitlines)
         except TypeError:
-            ctx.logger.info('%s%s (%s)', prefix, text, type(text))
+            ctx.logger.info(prefix + text)
 
     def _sudo(self, *args):
         """
@@ -570,7 +571,7 @@ class ChefManager(object):
             self._log_text('Chef stdout', '  [out] ', out)
             self._log_text('Chef stderr', '  [err] ', err)
         except subprocess.CalledProcessError as exc:
-            raise SudoError('{exc}\nSTDOUT:\n{stdout}\nSTDERR:{stderr}'.format(
+            raise SudoError('{exc}\nSTDOUT: {stdout}\nSTDERR: {stderr}'.format(
                 exc=exc,
                 stdout=get_file_contents(stdout),
                 stderr=get_file_contents(stderr)))
@@ -645,7 +646,8 @@ class ChefClientManager(ChefManager):
             'node_name              "{node_name}"\n'
             'ssl_verify_mode        :verify_none\n'
             'validation_client_name "{validation_client_name}"\n'
-            'chef_server_url        "{chef_server_url}"\n'
+            'chef_server_url        "https://{chef_server_url}:443/'
+            'organizations/{validation_client_name}"\n'
             'environment            "{environment}"\n'
             'validation_key         "{chef_data_root}/etc/validation.pem"\n'
             'client_key             "{chef_data_root}/etc/client.pem"\n'
