@@ -195,6 +195,7 @@ def get_chef_attributes(ctx):
     chef_runtime_properties_copy = copy.deepcopy(chef_runtime_properties)
 
     chef_attributes = chef_config.get('attributes', {})
+    chef_attributes_key = 'chef_attributes_c'
 
     # If chef_attributes is JSON or a file
     if isinstance(chef_attributes, basestring):
@@ -227,8 +228,8 @@ def get_chef_attributes(ctx):
 
     ctx.logger.debug('get_chef_attributes: %s', chef_attributes)
 
-    chef_runtime_properties['chef_attributes'] = chef_runtime_properties.get(
-        'chef_attributes', {}).update(chef_attributes)
+    chef_runtime_properties[chef_attributes_key] = chef_runtime_properties.get(
+        chef_attributes_key, {}).update(chef_attributes)
 
     return chef_attributes
 
@@ -396,7 +397,7 @@ class ChefManager(object):
                 os.remove(chef_install_script.name)
                 # on failure, leave for debugging
             except Exception as exc:
-                raise ChefError('Chef install failed on:\n' + exc)
+                raise ChefError('Chef install failed on:\n' + str(exc))
 
             ctx.logger.info('Setting up Chef [chef_server=\n%s]',
                             chef_config.get('chef_server_url'))
