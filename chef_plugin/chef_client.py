@@ -228,8 +228,10 @@ def get_chef_attributes(ctx):
 
     ctx.logger.debug('get_chef_attributes: %s', chef_attributes)
 
-    chef_runtime_properties[chef_attributes_key] = chef_runtime_properties.get(
-        chef_attributes_key, {}).update(chef_attributes)
+    if (chef_attributes_key not in chef_runtime_properties or
+                chef_runtime_properties[chef_attributes_key] is None):
+        chef_runtime_properties[chef_attributes_key] = {}
+    chef_runtime_properties[chef_attributes_key].update(chef_attributes)
 
     return chef_attributes
 
