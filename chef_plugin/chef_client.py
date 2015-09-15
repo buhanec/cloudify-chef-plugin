@@ -535,12 +535,10 @@ class ChefManager(object):
         ctx = self.ctx
         if not text:
             return
+
         ctx.logger.info('*** {} ***'.format(title))
 
-        try:
-            map(lambda s: ctx.logger.info(prefix + s), str(text).splitlines)
-        except TypeError:
-            ctx.logger.info(prefix + text)
+        map(lambda s: ctx.logger.info(prefix + s), text.splitlines())
 
     def _sudo(self, *args):
         """
