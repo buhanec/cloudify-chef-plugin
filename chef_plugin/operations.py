@@ -35,7 +35,8 @@ def _extract_op(ctx):
 def operation(ctx, **kwargs):
     chef_config = get_chef_config(ctx)
 
-    ctx.logger.warn('Unused kwargs: %s', kwargs)
+    if kwargs:
+        ctx.logger.warn('Unused kwargs: %s', kwargs)
     ctx.logger.info('Chef config: %s', chef_config)
 
     if 'runlist' in chef_config:
